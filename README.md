@@ -6,4 +6,17 @@ PyTorch implementation of the paper:
 
 Chen Zhang, Wentao Wang, Ximeng Li, Xinyao Liao, Wanjuan Su, Wenbing Tao*
 
-code will come soon!
+## Setup  
+Python package requirements (other similar versions are also acceptable).  
+```
+python == 3.9
+pytorch == 1.12.1
+...
+```
+In addition, you also need to install some C++ libraries.  
+```
+Open3D == 0.16
+CGAL
+boost
+libgmp-dev
+```
