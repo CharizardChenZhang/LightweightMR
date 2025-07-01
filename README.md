@@ -26,7 +26,7 @@ libgmp-dev
 ```
 
 ## Compiling
-You need to compile several C++ programs.  
+Before starting, you need to compile several C++ programs.  
 - Compile a kdtree algorithm for fast querying.
 ```
 cd models/cpplib
