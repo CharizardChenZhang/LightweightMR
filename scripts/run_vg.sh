@@ -4,6 +4,7 @@ SDF_CHECKPOINT=ckpt_020000.pth
 SUBDATADIR=VG
 VG_CHECKPOINT=ckpt_008000.pth
 
+
 DATA_DIR=./example/data/
 EXP_DIR=./example/exp/
 for SCAN in "47984" "44234" "354371"
