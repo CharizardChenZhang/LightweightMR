@@ -7,6 +7,29 @@ import torch.nn.functional as F
 import random
 import open3d as o3d
 
+# ---------------------------------------------------------------------------
+# KNN Backend Toggle: 'cpu' (default, original KDTree) or 'gpu' (pytorch3d)
+# ---------------------------------------------------------------------------
+_KNN_BACKEND = 'cpu'
+
+def set_knn_backend(backend: str):
+    """Set the KNN backend globally. Options: 'cpu', 'gpu'."""
+    global _KNN_BACKEND
+    assert backend in ('cpu', 'gpu'), f"Invalid KNN backend: {backend}. Use 'cpu' or 'gpu'."
+    if backend == 'gpu':
+        try:
+            from pytorch3d.ops import knn_points  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "pytorch3d is required for GPU KNN. Install with:\n"
+                "pip install pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt251/download.html"
+            )
+    _KNN_BACKEND = backend
+    print(f"[KNN] Backend set to: {_KNN_BACKEND}")
+
+def get_knn_backend() -> str:
+    return _KNN_BACKEND
+
 logger_initialized = {}
 
 def get_root_logger(log_file=None, log_level=logging.INFO, name='main'):
@@ -132,20 +155,73 @@ def print_log(msg, logger=None, level=logging.INFO):
             'logger should be either a logging.Logger object, str, '
             f'"silent" or None, but got {type(logger)}')
 
-def get_neighbor_idx_noself(pc, query_pts, k):
+def _get_neighbor_idx_cpu(pc, query_pts, k):
+    """CPU KNN via KDTree. pc and query_pts are numpy arrays."""
+    kdtree = KDTree(pc)
+    (x, idx) = kdtree.query(query_pts, k)
+    idx = torch.from_numpy(idx.astype(int)).long()
+    return idx
+
+def _get_neighbor_idx_noself_cpu(pc, query_pts, k):
+    """CPU KNN via KDTree, excluding self-matches. pc and query_pts are numpy arrays."""
     kdtree = KDTree(pc)
     (x, idx) = kdtree.query(query_pts, k + 1)
     idx = idx[:, 1:]
     idx = torch.from_numpy(idx.astype(int)).long()
+    return idx.squeeze(-1)
 
+def _get_neighbor_idx_gpu(pc, query_pts, k):
+    """GPU KNN via pytorch3d. pc and query_pts are CUDA tensors of shape (N,3) and (M,3)."""
+    from pytorch3d.ops import knn_points
+    # knn_points expects (B, N, D) shaped inputs
+    pc_batch = pc.unsqueeze(0).float()           # (1, N, 3)
+    query_batch = query_pts.unsqueeze(0).float()  # (1, M, 3)
+    result = knn_points(query_batch, pc_batch, K=k)
+    idx = result.idx.squeeze(0).long()  # (M, k)
+    if k == 1:
+        idx = idx.squeeze(-1)  # (M,) — match CPU KDTree behavior
+    return idx
+
+def _get_neighbor_idx_noself_gpu(pc, query_pts, k):
+    """GPU KNN via pytorch3d, excluding self-matches. pc and query_pts are CUDA tensors."""
+    from pytorch3d.ops import knn_points
+    pc_batch = pc.unsqueeze(0).float()
+    query_batch = query_pts.unsqueeze(0).float()
+    result = knn_points(query_batch, pc_batch, K=k + 1)
+    idx = result.idx.squeeze(0)[:, 1:].long()  # (M, k) — skip nearest (self)
     return idx.squeeze(-1)
 
 def get_neighbor_idx(pc, query_pts, k):
-    kdtree = KDTree(pc)
-    (x, idx) = kdtree.query(query_pts, k)
-    idx = torch.from_numpy(idx.astype(int)).long()
+    """Unified KNN interface. Accepts numpy (cpu) or CUDA tensors (gpu) depending on backend."""
+    if _KNN_BACKEND == 'gpu':
+        # Convert numpy to CUDA tensor if needed
+        if isinstance(pc, np.ndarray):
+            pc = torch.from_numpy(pc).float().cuda()
+        if isinstance(query_pts, np.ndarray):
+            query_pts = torch.from_numpy(query_pts).float().cuda()
+        return _get_neighbor_idx_gpu(pc, query_pts, k)
+    else:
+        # Convert tensor to numpy if needed
+        if isinstance(pc, torch.Tensor):
+            pc = pc.detach().cpu().numpy()
+        if isinstance(query_pts, torch.Tensor):
+            query_pts = query_pts.detach().cpu().numpy()
+        return _get_neighbor_idx_cpu(pc, query_pts, k)
 
-    return idx
+def get_neighbor_idx_noself(pc, query_pts, k):
+    """Unified KNN interface (no self). Accepts numpy (cpu) or CUDA tensors (gpu) depending on backend."""
+    if _KNN_BACKEND == 'gpu':
+        if isinstance(pc, np.ndarray):
+            pc = torch.from_numpy(pc).float().cuda()
+        if isinstance(query_pts, np.ndarray):
+            query_pts = torch.from_numpy(query_pts).float().cuda()
+        return _get_neighbor_idx_noself_gpu(pc, query_pts, k)
+    else:
+        if isinstance(pc, torch.Tensor):
+            pc = pc.detach().cpu().numpy()
+        if isinstance(query_pts, torch.Tensor):
+            query_pts = query_pts.detach().cpu().numpy()
+        return _get_neighbor_idx_noself_cpu(pc, query_pts, k)
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -156,15 +232,14 @@ def setup_seed(seed):
 
 def PCA(pts, queries, conf):
     knn = conf.get_int('model.loss.knn_nc')
-    neigh_idx = get_neighbor_idx(pts.detach().cpu().numpy(), queries.detach().cpu().numpy(), knn)  # n,k
+    neigh_idx = get_neighbor_idx(pts, queries, knn)  # n,k
     neigh_pts = pts[neigh_idx]  # n,k,3
     pts_dif = neigh_pts - queries.unsqueeze(1)  # n,k,3
     pts_dif_T = pts_dif.permute(0, 2, 1)  # n,3,k
     co_matrix = pts_dif_T @ pts_dif  # n,3,3
-    eigs, vectors = torch.linalg.eig(co_matrix) # eigs:n,3;vectors:n,3,3
-    eigs, vectors = eigs.real, vectors.real
-    min_eig_index = torch.argmin(eigs, dim=1)
-    normal = vectors[torch.arange(vectors.shape[0]), min_eig_index, :]
+    eigs, vectors = torch.linalg.eigh(co_matrix)  # eigs:n,3; vectors:n,3,3
+    # eigh returns eigenvalues in ascending order, so the smallest is at index 0.
+    normal = vectors[:, :, 0]
     normal = F.normalize(normal, dim=-1)
 
     return normal

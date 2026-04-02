@@ -51,7 +51,7 @@ def sdf_loss(sample_sdf):
     return loss
 
 def cal_curvature_with_covariance(pts, knn):  # pts: n,3
-    neigh_idx_noself = get_neighbor_idx_noself(pts.detach().cpu().numpy(), pts.detach().cpu().numpy(), knn) # n,k
+    neigh_idx_noself = get_neighbor_idx_noself(pts, pts, knn) # n,k
     neigh_pts_noself = pts[neigh_idx_noself]  # n,k,3
     pts_dif = neigh_pts_noself - pts.unsqueeze(1)  # n,k,3
     pts_dif_T = pts_dif.permute(0, 2, 1)  # n,3,k
@@ -76,7 +76,7 @@ def cal_curvature_with_covariance(pts, knn):  # pts: n,3
     return pts_curvature_ave  # n,1
 
 def cal_curvature_with_normal(pts, normals, knn):  # pts: n,3
-    neigh_idx_noself = get_neighbor_idx_noself(pts.detach().cpu().numpy(), pts.detach().cpu().numpy(), knn) # n,k
+    neigh_idx_noself = get_neighbor_idx_noself(pts, pts, knn) # n,k
     neigh_pts = pts[neigh_idx_noself]  # n,k,3
     neigh_normals = normals[neigh_idx_noself]  # n,k,3
     neigh_curvature = 1 - F.cosine_similarity(normals.unsqueeze(1), neigh_normals, dim=-1)  # n,k
@@ -99,7 +99,7 @@ def cal_curvature_with_sdf(pts, eigenvalues, eigenvectors, knn):
     ei_vectors = F.normalize(eigenvectors, dim=-1)
 
     # knn gaussian mean
-    neigh_idx_noself = get_neighbor_idx_noself(pts.detach().cpu().numpy(), pts.detach().cpu().numpy(), knn)  # n,k
+    neigh_idx_noself = get_neighbor_idx_noself(pts, pts, knn)  # n,k
     neigh_pts = pts[neigh_idx_noself]  # n,k,3
     neigh_cur = curvature[neigh_idx_noself]  # n,k
     guassian_weight = guassian_kernel(neigh_pts, pts).detach()
@@ -115,7 +115,7 @@ def cal_cur_loss(curvature_surface, curvature_sample, sur_neigh_idx):
     return cur_loss
 
 def cal_nc_loss_knn(surface_pts, surface_normals, sample_pts, sample_normals, knn):
-    neigh_idx = get_neighbor_idx(sample_pts.detach().cpu().numpy(), surface_pts.detach().cpu().numpy(), knn)
+    neigh_idx = get_neighbor_idx(sample_pts, surface_pts, knn)
     neigh_samples = sample_pts[neigh_idx]      # n,k,3
     neigh_normals = sample_normals[neigh_idx]  # n,k,3
     guassian_weight = guassian_kernel(neigh_samples, surface_pts).unsqueeze(-1).detach()   # n,k,1
@@ -143,19 +143,19 @@ def cal_nc_loss(surface_normals, sample_normals, sur_neigh_idx):
 def cal_chamfer_loss(sur_pts, sample_pts, curvature_surface, loss_w, nearest_clamp):
     # find nearest x2 for each x1
     weight_sur_curvature = curvature_surface
-    sur_neigh_idx = get_neighbor_idx(sample_pts.detach().cpu().numpy(), sur_pts.detach().cpu().numpy(), 1)  # n
+    sur_neigh_idx = get_neighbor_idx(sample_pts, sur_pts, 1)  # n
     sur_neigh_pts = sample_pts[sur_neigh_idx]  # n,3
     dist_1 = torch.linalg.norm((sur_pts - sur_neigh_pts), ord=2, dim=-1).unsqueeze(-1) ** 2
     loss_part_1 = loss_w[0]*(dist_1 * weight_sur_curvature).mean() + loss_w[1]*dist_1.mean()
 
     # find nearest x1 for each x2
-    sample_neigh_idx = get_neighbor_idx(sur_pts.detach().cpu().numpy(), sample_pts.detach().cpu().numpy(), 1)
+    sample_neigh_idx = get_neighbor_idx(sur_pts, sample_pts, 1)
     sample_neigh_pts = sur_pts[sample_neigh_idx]  # m,3
     dist_2 = torch.linalg.norm((sample_pts - sample_neigh_pts), ord=2, dim=-1) ** 2
     loss_part_2 = loss_w[2]*dist_2.mean()
 
     # find nearest x2 for each x2
-    sample_neigh_idx_self = get_neighbor_idx_noself(sample_pts.detach().cpu().numpy(),sample_pts.detach().cpu().numpy(),1)
+    sample_neigh_idx_self = get_neighbor_idx_noself(sample_pts, sample_pts, 1)
     sample_neigh_pts_self = sample_pts[sample_neigh_idx_self]
     relative_dist = sample_neigh_pts_self - sample_pts
     norm_dist = torch.linalg.norm(relative_dist, ord=2, dim=-1) ** 2

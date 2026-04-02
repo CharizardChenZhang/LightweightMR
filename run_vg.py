@@ -12,7 +12,7 @@ from tqdm import tqdm
 from models.dataset import DatasetNP
 from models.sdfnet import SDFNetwork
 from models.vgnet import VGNetwork, VGNetwork_PTF
-from models.utils import get_root_logger, print_log, setup_seed
+from models.utils import get_root_logger, print_log, setup_seed, set_knn_backend
 from models.meshing import delaunay_meshing
 from models.modules import netutils
 from models import visualization, sampling, losses
@@ -264,10 +264,13 @@ if __name__ == '__main__':
     parser.add_argument('--dataname', type=str, default='47984')
     parser.add_argument('--subdatadir', type=str, default='VG')
     parser.add_argument('--checkpoint_name', type=str, default=None)
+    parser.add_argument('--knn_mode', type=str, default='cpu', choices=['cpu', 'gpu'],
+                        help='KNN backend: cpu (KDTree) or gpu (pytorch3d). GPU is ~18x faster.')
     args = parser.parse_args()
 
     setup_seed(266815867)
     torch.cuda.set_device(args.gpu)
+    set_knn_backend(args.knn_mode)
     runner = Runner(args, args.conf, args.mode, args.checkpoint_name)
 
     if args.mode == 'train':
