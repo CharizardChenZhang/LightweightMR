@@ -44,7 +44,7 @@ cd create_delaunay
 cmake ./
 make
 
-cd create_delaunay
+cd create_mesh
 # mkdir build
 # cd build
 # cmake ../
