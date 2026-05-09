@@ -42,7 +42,7 @@ def up_sampling(curvature, pts, point_gt, sample_size):
     up_sampling_size = sample_size - len(pts)
     top_values, top_indices = torch.topk(curvature.view(-1), k=up_sampling_size, largest=True)
     curvature_best_points = pts[top_indices]
-    idx = get_neighbor_idx(point_gt.cpu().numpy(), curvature_best_points.cpu().numpy(), 1)  # n
+    idx = get_neighbor_idx(point_gt, curvature_best_points, 1)  # n
     up_sampling_points = point_gt[idx]
     sample_points = torch.cat((pts, up_sampling_points), dim=0)
     top_values = torch.cat((curvature, top_values.unsqueeze(-1)), dim=0)
@@ -52,7 +52,7 @@ def up_sampling(curvature, pts, point_gt, sample_size):
 def up_sampling_2(sample_normals, samples, normals_gt, point_gt, sample_size):
     sample_normals, samples, normals_gt, point_gt = sample_normals.detach(), samples.detach(), normals_gt.detach(), point_gt.detach()
     sample_normals = F.normalize(sample_normals, dim=-1)
-    sur_neigh_idx = get_neighbor_idx(samples.cpu().numpy(), point_gt.cpu().numpy(), 1)  # n
+    sur_neigh_idx = get_neighbor_idx(samples, point_gt, 1)  # n
     neigh_normals = sample_normals[sur_neigh_idx]  # n,3
     normal_s = F.cosine_similarity(normals_gt, neigh_normals, dim=-1)
     up_sampling_size = sample_size - len(samples)
@@ -71,7 +71,7 @@ def up_sampling_2(sample_normals, samples, normals_gt, point_gt, sample_size):
 def up_sampling_3(sample_normals, samples, normals_gt, point_gt, sample_size):
     sample_normals, samples, normals_gt, point_gt = sample_normals.detach(), samples.detach(), normals_gt.detach(), point_gt.detach()
     sample_normals = F.normalize(sample_normals, dim=-1)
-    sur_neigh_idx = get_neighbor_idx(samples.cpu().numpy(), point_gt.cpu().numpy(), 1)  # n
+    sur_neigh_idx = get_neighbor_idx(samples, point_gt, 1)  # n
     neigh_normals = sample_normals[sur_neigh_idx]  # n,3
     normal_s = F.cosine_similarity(normals_gt, neigh_normals, dim=-1)
     _, indices = torch.sort(normal_s, descending=True)
@@ -79,7 +79,7 @@ def up_sampling_3(sample_normals, samples, normals_gt, point_gt, sample_size):
     unique_neigh_idx = torch.unique(sort_neigh_idx)
     up_sampling_size = sample_size - len(samples)
     candidate_points = (samples[unique_neigh_idx])[:up_sampling_size]
-    up_sampling_idx = get_neighbor_idx(point_gt.cpu().numpy(), candidate_points.cpu().numpy(), 1)  # n
+    up_sampling_idx = get_neighbor_idx(point_gt, candidate_points, 1)  # n
     up_sampling_points = point_gt[up_sampling_idx]
     up_sampling_normals = normals_gt[up_sampling_idx]
     sample_points = torch.cat((samples, up_sampling_points), dim=0)
@@ -94,7 +94,7 @@ def down_sampling(curvature, pts, point_gt, sample_size):
 
     top_values_, top_indices_ = torch.topk(curvature.view(-1), k=sample_size-int(sample_size * 0.8), largest=True)
     sample_points_ = pts[top_indices_]
-    idx = get_neighbor_idx(point_gt.cpu().numpy(), sample_points_.cpu().numpy(), 1)  #n
+    idx = get_neighbor_idx(point_gt, sample_points_, 1)  #n
     sample_points_ = point_gt[idx]
 
     sample_points = torch.cat((sample_points, sample_points_), dim=0)

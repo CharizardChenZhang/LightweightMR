@@ -45,7 +45,7 @@ def process_data(data_dir, dataname, conf, with_normal=False):
     queries_size = conf.get_int('dataset.queries_size')
     POINT_NUM = pointcloud.shape[0] // 60
     POINT_NUM_GT = pointcloud.shape[0] // 60 * 60
-    QUERY_EACH = queries_size // POINT_NUM_GT
+    QUERY_EACH = max(1, queries_size // POINT_NUM_GT)
 
     point_idx = np.random.choice(pointcloud.shape[0], POINT_NUM_GT, replace=False)
     pointcloud = pointcloud[point_idx, :]
@@ -237,7 +237,7 @@ class DatasetNP:
         return sample_points
 
     def cal_nearest_clamp(self, sample_pts):
-        sample_neigh_idx_self = utils.get_neighbor_idx_noself(sample_pts.detach().cpu().numpy(), sample_pts.detach().cpu().numpy(), 1)
+        sample_neigh_idx_self = utils.get_neighbor_idx_noself(sample_pts, sample_pts, 1)
         sample_neigh_pts_self = sample_pts[sample_neigh_idx_self]
         relative_dist = sample_neigh_pts_self - sample_pts
         norm_dist = torch.linalg.norm(relative_dist, ord=2, dim=-1) ** 2
